@@ -23,13 +23,14 @@
 #
 # Uso:
 #   antigravity-manager.sh                          Menú interactivo (o status si no hay terminal)
-#   antigravity-manager.sh menu                     Menú: actualizar todos o los que elijas
+#   antigravity-manager.sh menu                     Menú: instalar o actualizar según elijas
 #   antigravity-manager.sh status                   Versiones instaladas vs. disponibles
-#   antigravity-manager.sh update [componente...]   Actualiza (por defecto: todos)
+#   antigravity-manager.sh install [componente...]  Instala o actualiza (por defecto: todos)
+#   antigravity-manager.sh update [componente...]   Actualiza o instala (por defecto: todos)
 #   antigravity-manager.sh backup                   Copia de seguridad de conversaciones y ajustes
 #   antigravity-manager.sh backups                  Lista las copias de seguridad
 #   antigravity-manager.sh restore [copia]          Restaura una copia (pregunta cuál si no se indica)
-#   antigravity-manager.sh clean                    Borra restos de actualizaciones previas
+#   antigravity-manager.sh clean                    Borra restos de instalaciones o actualizaciones previas
 #   antigravity-manager.sh help
 #
 # Opciones:
@@ -94,7 +95,7 @@ die() {
 	exit 1
 }
 
-usage() { sed -n '3,44p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,/^set -euo/ { /^set -euo/d; s/^# \{0,1\}//; p; }' "$0"; }
 
 confirm() {
 	[ "$ASSUME_YES" = yes ] && return 0
@@ -269,7 +270,19 @@ list_backup_dirs() {
 # enlazan (hard link) y no ocupan espacio extra.
 # Uso: create_backup [etiqueta] [prune|no-prune]
 create_backup() {
-	local label=${1:-manual} prune=${2:-prune} dest latest root filters
+	local label=${1:-manual} prune=${2:-prune} dest latest root filters has_data=no
+	for root in "${DATA_PATHS[@]}"; do
+		if [ -d "$HOME/$root" ]; then
+			has_data=yes
+			break
+		fi
+	done
+
+	if [ "$has_data" = no ]; then
+		info "No hay datos ni conversaciones previas que respaldar; omitiendo copia de seguridad."
+		return 0
+	fi
+
 	mkdir -p "$BACKUP_DIR"
 	chmod 700 "$BACKUP_DIR"
 	latest=$(list_backup_dirs | tail -n1)
@@ -286,10 +299,12 @@ create_backup() {
 			"$HOME/$root/" "$dest.partial/$root/" ||
 			die "Falló la copia de $HOME/$root; no se continúa para no arriesgar datos."
 	done
-	mv -- "$dest.partial" "$dest"
-	# du cuenta una sola vez los hard links compartidos: la última línea es lo nuevo.
-	ok "Copia creada: $(basename "$dest") ($(du -sh ${latest:+"$latest"} "$dest" | tail -n1 | cut -f1) nuevos)"
-	[ "$prune" = no-prune ] || prune_backups
+	if [ -d "$dest.partial" ]; then
+		mv -- "$dest.partial" "$dest"
+		# du cuenta una sola vez los hard links compartidos: la última línea es lo nuevo.
+		ok "Copia creada: $(basename "$dest") ($(du -sh ${latest:+"$latest"} "$dest" | tail -n1 | cut -f1) nuevos)"
+		[ "$prune" = no-prune ] || prune_backups
+	fi
 }
 
 prune_backups() {
@@ -426,39 +441,52 @@ update_cli() {
 	fi
 	if ! bash "$tmp/install.sh" || [ ! -x "$CLI_BIN" ]; then
 		[ -f "$prev" ] && mv -f -- "$prev" "$CLI_BIN"
-		die "Falló la actualización del CLI"
+		if [ -f "$prev" ]; then
+			die "Falló la actualización del CLI"
+		else
+			die "Falló la instalación del CLI"
+		fi
 	fi
 }
 
 # Devuelve 0 si el componente necesita instalarse o actualizarse.
 needs_update() {
-	local component=$1 label local_v remote_v
+	local component=$1 label local_v remote_v action
 	label=$(component_label "$component")
 	local_v=$(local_version "$component")
 	remote_v=$(remote_version "$component")
 
 	REMOTE_VERSIONS[$component]=$remote_v
 
+	action="actualiza"
+	[ -z "$local_v" ] && action="instala"
+
 	info "$label: instalada ${local_v:-ninguna}, disponible ${remote_v:-desconocida}"
 	if [ -z "$remote_v" ] && [ "$FORCE" != yes ]; then
-		warn "$label: no se pudo consultar la versión disponible; no se actualiza (usa --force para forzarlo)"
+		warn "$label: no se pudo consultar la versión disponible; no se $action (usa --force para forzarlo)"
 		return 1
 	fi
 	if [ "$FORCE" != yes ] && [ -n "$local_v" ] && ! version_newer "$local_v" "$remote_v"; then
 		ok "$label ya está al día"
 		return 1
 	fi
+	return 0
 }
 
 update_component() {
-	local component=$1
+	local component=$1 is_install=no
+	[ -z "$(local_version "$component")" ] && is_install=yes
 	case "$component" in
 	desktop) update_with_helper "$DESKTOP_HELPER" ;;
 	ide) update_with_helper "$IDE_HELPER" ;;
 	cli) update_cli ;;
 	esac
 	record_version "$component" "${REMOTE_VERSIONS[$component]:-}"
-	ok "$(component_label "$component"): $(local_version "$component")"
+	if [ "$is_install" = yes ]; then
+		ok "$(component_label "$component") instalado: $(local_version "$component")"
+	else
+		ok "$(component_label "$component") actualizado: $(local_version "$component")"
+	fi
 }
 
 cmd_update() {
@@ -482,24 +510,45 @@ cmd_update() {
 		return 0
 	fi
 
-	ensure_closed || die "Actualización cancelada: cierra Antigravity y vuelve a intentarlo."
+	local all_installs=yes
+	for component in "${pending[@]}"; do
+		if [ -n "$(local_version "$component")" ]; then
+			all_installs=no
+			break
+		fi
+	done
+
+	local op_name="Actualización"
+	local backup_prefix="pre-update"
+	if [ "$all_installs" = yes ]; then
+		op_name="Instalación"
+		backup_prefix="pre-install"
+	fi
+
+	ensure_closed || die "$op_name cancelada: cierra Antigravity y vuelve a intentarlo."
 	if [ "$DO_BACKUP" = yes ]; then
-		create_backup "pre-update-$(IFS=-; echo "${pending[*]}")"
+		create_backup "$backup_prefix-$(IFS=-; echo "${pending[*]}")"
 	else
-		warn "Actualizando sin copia de seguridad (--no-backup)"
+		warn "Procediendo sin copia de seguridad (--no-backup)"
 	fi
 
 	for component in "${pending[@]}"; do
+		local comp_is_install=no
+		[ -z "$(local_version "$component")" ] && comp_is_install=yes
 		# Cada componente en un subshell: si uno falla, se sigue con el resto.
 		if ! (update_component "$component"); then
 			failed+=("$component")
-			warn "Falló la actualización de $(component_label "$component")"
+			if [ "$comp_is_install" = yes ]; then
+				warn "Falló la instalación de $(component_label "$component")"
+			else
+				warn "Falló la actualización de $(component_label "$component")"
+			fi
 		fi
 	done
 
 	echo
 	cmd_status
-	if [ "$DO_BACKUP" = yes ]; then
+	if [ "$DO_BACKUP" = yes ] && [ "$all_installs" = no ]; then
 		echo
 		info "Al abrirse por primera vez, las versiones nuevas pueden migrar las conversaciones."
 		info "Si falta alguna, restaura la copia previa con: $0 restore"
@@ -507,25 +556,55 @@ cmd_update() {
 	[ ${#failed[@]} -eq 0 ] || die "Componentes con error: ${failed[*]}"
 }
 
-# Menú interactivo: permite actualizar todos los componentes o solo los elegidos
+# Menú interactivo: permite instalar o actualizar todos los componentes o solo los elegidos
 # (varios números separados por espacios o comas, p. ej. "2 4").
 cmd_menu() {
 	local choice token tokens selected component unique
-	[ -t 0 ] || die "El menú necesita una terminal interactiva; usa: $0 update [componente...]"
+	local label_desktop label_ide label_cli label_all
+	local count_installed=0 count_missing=0
+	[ -t 0 ] || die "El menú necesita una terminal interactiva; usa: $0 install [componente...] o $0 update [componente...]"
 
 	while true; do
 		echo
 		cmd_status
 		echo
+
+		count_installed=0
+		count_missing=0
+		for component in "${ALL_COMPONENTS[@]}"; do
+			if [ -n "$(local_version "$component")" ]; then
+				count_installed=$((count_installed + 1))
+			else
+				count_missing=$((count_missing + 1))
+			fi
+		done
+
+		if [ "$count_installed" -eq 0 ]; then
+			label_all="Instalar todos"
+		elif [ "$count_missing" -eq 0 ]; then
+			label_all="Actualizar todos"
+		else
+			label_all="Instalar o actualizar todos"
+		fi
+
+		label_desktop="Actualizar $(component_label desktop)"
+		[ -z "$(local_version desktop)" ] && label_desktop="Instalar $(component_label desktop)"
+
+		label_ide="Actualizar $(component_label ide)"
+		[ -z "$(local_version ide)" ] && label_ide="Instalar $(component_label ide)"
+
+		label_cli="Actualizar $(component_label cli)"
+		[ -z "$(local_version cli)" ] && label_cli="Instalar $(component_label cli)"
+
 		printf '%s¿Qué quieres hacer?%s\n' "$C_BOLD" "$C_OFF"
-		echo "  1) Actualizar todos"
-		echo "  2) Actualizar $(component_label desktop)"
-		echo "  3) Actualizar $(component_label ide)"
-		echo "  4) Actualizar $(component_label cli)"
+		echo "  1) $label_all"
+		echo "  2) $label_desktop"
+		echo "  3) $label_ide"
+		echo "  4) $label_cli"
 		echo "  b) Copia de seguridad de conversaciones"
 		echo "  l) Listar copias de seguridad"
 		echo "  s) Restaurar una copia de seguridad"
-		echo "  c) Limpiar restos de actualizaciones"
+		echo "  c) Limpiar restos de instalaciones o actualizaciones"
 		echo "  r) Refrescar estado"
 		echo "  q) Salir"
 		read -r -p "Opción (puedes elegir varias, p. ej. \"2 4\"): " choice || return 0

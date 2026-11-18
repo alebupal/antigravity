@@ -1,10 +1,10 @@
 # Antigravity Manager (`antigravity-manager.sh`)
 
-Script en Bash para consultar el estado, actualizar, respaldar y restaurar todo el ecosistema de **Google Antigravity** en Linux protegiendo tus conversaciones y configuraciones locales.
+Script en Bash para consultar el estado, instalar, actualizar, respaldar y restaurar todo el ecosistema de **Google Antigravity** en Linux protegiendo tus conversaciones y configuraciones locales.
 
 ## Componentes gestionados
 
-| Componente | Descripción | Ruta de instalación | Método de actualización |
+| Componente | Descripción | Ruta de instalación | Método de instalación / actualización |
 | :--- | :--- | :--- | :--- |
 | **`desktop`** | Antigravity (app de agentes) | `/opt/antigravity` | `sudo update-antigravity` (helper LinuxCapable) |
 | **`ide`** | Antigravity IDE (fork VS Code) | `/opt/antigravity-ide` | `sudo update-antigravity-ide` (helper LinuxCapable) |
@@ -48,9 +48,10 @@ Si se ejecuta sin argumentos en una terminal interactiva, abre el **menú intera
 
 | Comando | Descripción |
 | :--- | :--- |
-| `menu` | Abre el menú interactivo para actualizar todos los componentes o elegir varios (ej. `2 4`), gestionar backups o limpiar archivos temporales. |
+| `menu` | Abre el menú interactivo para instalar o actualizar todos los componentes o elegir varios (ej. `2 4`), gestionar backups o limpiar archivos temporales. |
 | `status` | Muestra una tabla comparando las versiones instaladas frente a las últimas versiones disponibles. |
-| `update [componente...]` | Actualiza los componentes indicados (`desktop`, `ide`, `cli` o `all`). Si no se especifica ninguno, actualiza todos los que tengan nueva versión. |
+| `install [componente...]` | Instala los componentes indicados (`desktop`, `ide`, `cli` o `all`). Si ya están instalados, los actualiza si hay una versión más reciente. |
+| `update [componente...]` | Actualiza o instala los componentes indicados (`desktop`, `ide`, `cli` o `all`). Si no se especifica ninguno, procesa todos los pendientes. |
 | `backup` | Cierra Antigravity (si está abierto) y crea una copia de seguridad manual de conversaciones y ajustes. |
 | `backups` | Lista las copias de seguridad disponibles y su tamaño incremental. |
 | `restore [copia]` | Restaura una copia de seguridad (creando antes un backup `pre-restore` del estado actual). Si no se indica nombre, permite elegirla interactivamente. |
