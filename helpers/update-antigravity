@@ -227,16 +227,14 @@ esac
 
 expected_target="$install_root/$expected_top_dir/antigravity"
 sandbox_path="$install_root/$expected_top_dir/chrome-sandbox"
-root_owned=no
 root_legacy_owned=no
 if [ -L "$install_root" ] || { [ -e "$install_root" ] && [ ! -d "$install_root" ]; }; then
 	echo "$install_root is not a regular install directory. Move it before rerunning this helper." >&2
 	exit 1
 elif [ -d "$install_root" ]; then
 	if [ -f "$root_marker" ] && [ "$(cat "$root_marker")" = "$managed_id" ]; then
-		root_owned=yes
+		:
 	elif [ -f "$install_root/.linuxcapable-version" ] && [ -x "$expected_target" ]; then
-		root_owned=yes
 		root_legacy_owned=yes
 	else
 		echo "$install_root is not a recognized LinuxCapable install. Move it before rerunning this helper." >&2
