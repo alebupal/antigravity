@@ -7,9 +7,10 @@
 #   ide      Antigravity IDE (fork VS Code) /opt/antigravity-ide   -> sudo update-antigravity-ide
 #   cli      Antigravity CLI (agy)          ~/.local/bin/agy       -> instalador oficial
 #
-# Desktop e IDE se gestionan con los helpers de LinuxCapable ya instalados en
-# /usr/local/bin (descargan el tarball de https://antigravity.google/download,
-# validan el archivo, hacen copia de seguridad y revierten si algo falla).
+# Desktop e IDE se gestionan con los helpers de LinuxCapable (incluidos en helpers/
+# y desplegados automáticamente en /usr/local/bin si no existen). Descargan el tarball
+# de https://antigravity.google/download, validan el archivo, hacen copia de seguridad
+# y revierten si algo falla.
 # El CLI se actualiza con el instalador oficial (verifica SHA-512 del binario).
 # El instalador (install.sh) se descarga a un fichero, se comprueba que es un
 # script y se registra su SHA-256 antes de ejecutarlo; si se define
@@ -44,6 +45,8 @@
 #   ANTIGRAVITY_CLI_INSTALLER_SHA256  SHA-256 esperado de install.sh (opcional)
 #
 set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 DOWNLOAD_PAGE="https://antigravity.google/download"
 CLI_INSTALLER_URL="https://antigravity.google/cli/install.sh"
@@ -388,10 +391,28 @@ cmd_status() {
 	done
 }
 
+ensure_helper() {
+	local helper=$1 name bundled
+	name=$(basename "$helper")
+	if [ -x "$helper" ]; then
+		return 0
+	fi
+
+	bundled="$SCRIPT_DIR/helpers/$name"
+	if [ -f "$bundled" ]; then
+		info "No existe $helper; instalándolo desde el repositorio ($bundled)..."
+		sudo install -m 0755 "$bundled" "$helper" ||
+			die "No se pudo instalar el helper en $helper"
+		ok "Helper $name instalado en $helper"
+		return 0
+	fi
+
+	die "No existe $helper ni se encontró en $bundled. Instala primero el helper de LinuxCapable para este componente."
+}
+
 update_with_helper() {
 	local helper=$1
-	[ -x "$helper" ] ||
-		die "No existe $helper. Instala primero el helper de LinuxCapable para este componente."
+	ensure_helper "$helper"
 	sudo "$helper"
 }
 

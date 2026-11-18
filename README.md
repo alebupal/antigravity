@@ -32,7 +32,7 @@ Script en Bash para consultar el estado, instalar, actualizar, respaldar y resta
 
 - Ejecutar el script **como tu usuario normal** (sin `sudo`; el propio script solicitará `sudo` únicamente cuando necesite actualizar `desktop`, `ide` o limpiar archivos en `/opt`).
 - Comandos disponibles en el sistema: `curl`, `sed`, `grep`, `sort`, `pgrep`, `timeout`, `rsync` (y `sha256sum` para actualizar el CLI).
-- Para `desktop` e `ide`: contar con los helpers `/usr/local/bin/update-antigravity` y `/usr/local/bin/update-antigravity-ide`.
+- Para `desktop` e `ide`: se incluyen los helpers en `helpers/update-antigravity` y `helpers/update-antigravity-ide`, los cuales se instalan automáticamente en `/usr/local/bin/` al ejecutar el script si no existían previamente.
 
 ---
 
